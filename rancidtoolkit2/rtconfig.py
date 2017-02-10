@@ -1,180 +1,162 @@
 #!/usr/bin/env python
-#
-# Written by Marcus Stoegbauer <ms@man-da.de>
+"""
+rancidtoolkit2
+by Marcus Stoegbauer <ms@man-da.de>
+"""
 
-"""
-"""
-import sys
 import re
-import os.path
-from . import cisco
-from . import juniper
+from rancidtoolkit2 import cisco, juniper
 
-class rtconfig(object):
+
+class RtConfig(object):
 
     __method = ""
     __base_url = ""
-    __locations = list()
+    __locations = []
     __rancid_base = ""
 
-    def __init__(self, method="", locations=None, rancid_base="", oxidized_url=""):
-        if method == "" and oxidized_url != "":
-            method = "oxidized"
-        if method == "" and (type(locations) == list or type(locations) == str) and rancid_base != "":
-            method = "rancid"
-
-        if method != "oxidized" and method != "rancid":
-            raise ValueError("Could not determine config method")
-    # __init__
+    def __init__(self, *kwargs):
+        raise NotImplementedError()
 
     # overwrite with functions from implementations
-    def getActiveDevices(self):
-        pass
-    # getActiveDevices
+    def get_all_devices(self):
+        raise NotImplementedError()
 
-    def getRouter(self, device):
-        pass
-    # getRouter
+    def get_device(self, device):
+        raise NotImplementedError()
 
-    def getConfig(self, device):
-        pass
-    # getConfig
+    def get_config(self, device):
+        raise NotImplementedError()
 
     # generic functions, implement here
 
     def __str__(self):
-        foo = "configuration:\n"
-        foo = foo + "method:      "+self.__method+"\n"
-        foo = foo + "base url:    "+self.__base_url+"\n"
-        foo = foo + "locations:   "+str(self.__locations)+"\n"
-        foo = foo + "rancid base: "+self.__rancid_base+"\n"
-        return foo
-    # __str__
+        return "configuration\nmethod:\t{0}\nbase url:\t{1}\nlocations:\t{2}" \
+               "\nrancid base:\t{3}".format(self.__method,
+                                            self.__base_url,
+                                            str(self.__locations),
+                                            self.__rancid_base)
 
-    def filterActiveDevices(self, filter=None):
-        devices = self.getActiveDevices()
-        if type(filter) == dict:
-            if 'vendor' in filter:
+    def filter_active_devices(self, pattern=None):
+        devices = self.get_all_devices()
+        if isinstance(pattern, dict):
+            if 'vendor' in pattern:
                 filterdev = devices.copy()
-                for dev in devices.keys():
-                    if devices[dev].lower() != filter['vendor'].lower():
+                for dev in devices:
+                    if devices[dev].lower() != pattern['vendor'].lower():
                         filterdev.pop(dev)
-                # for dev
+
                 devices = filterdev.copy()
-            # if vendor
-            if 'name' in filter:
+
+            if 'name' in pattern:
                 filterdev = devices.copy()
-                for dev in devices.keys():
-                    if not re.search(filter['name'], dev):
+                for dev in devices:
+                    if not re.search(pattern['name'], dev):
                         filterdev.pop(dev)
-                # for dev
+
                 devices = filterdev.copy()
-            # if name
+
         else:
             raise TypeError("filter is not a dict")
 
         return devices.keys()
-    # filterActiveDevices
 
-    def printableInterfaceList(self, device):
-        intlist = self.interfaceDescriptionList(device)
+    def printable_interfaces(self, device):
+        intlist = self.get_interface_descriptions(device)
 
-        ret = []
-        for interface in intlist.keys():
+        result = []
+        for interface in intlist:
             unit = ""
-            unitre = re.search("(\.[0-9]+)$", interface)
+            unit_match = re.search(r"(\.[0-9]+)$", interface)
             inttemp = interface
-            if unitre:
-                unit = unitre.group(1)
-                inttemp = re.sub(".[0-9]+$", "", interface)
-            # if unit
-            lastintid = re.search("^(.*)/([0-9])$", inttemp)
-            if lastintid:
-                intstr = lastintid.group(1) + "/" + lastintid.group(2)
+            if unit_match:
+                unit = unit_match.group(1)
+                inttemp = re.sub(r".[0-9]+$", "", interface)
+
+            lastintid_match = re.search(r"^(.*)/([0-9])$", inttemp)
+            if lastintid_match:
+                intstr = "{0}/{1}".format(lastintid_match.group(1),
+                                          lastintid_match.group(2))
             else:
                 intstr = inttemp
-            # if lastintid
+
             if unit:
-                intstr = intstr + unit
-            # if unit
-            ret.append(intstr + ": " + intlist[interface])
-        # for interface
-        ret.sort()
-        return ret
-    # printableInterfaceList
+                intstr += unit
 
-    def interfaceDescriptionList(self, device):
-        devinfo = self.getRouter(device)
-        if len(devinfo) == 0:
-            raise LookupError("Could not find device %s" % device)
+            result.append("{0}: {1}".format(intstr, intlist[interface]))
 
-        devconfig = self.getConfig(devinfo[0])
-        routertype = devinfo[1].lower()
-        if routertype == "cisco" or routertype == "force10":
-            return cisco.interfaces(devconfig)
-        elif routertype == "juniper":
-            return juniper.interfaces(devconfig)
+        result.sort()
+        return result
+
+    def get_interface_descriptions(self, device):
+        devinfo = self.get_device(device)
+        if not devinfo:
+            raise LookupError(u"Could not find device {0:s}".format(device))
+
+        devconfig = self.get_config(devinfo.Hostname)
+        routertype = devinfo.ConfigType.lower()
+        if routertype == 'cisco' or routertype == 'force10':
+            return cisco.get_interfaces(devconfig)
+        elif routertype == 'juniper':
+            return juniper.get_interfaces(devconfig)
         else:
-            raise ValueError("Cannot handle device type %s for device %s." % (routertype, device))
-        # if routertype
-    # interfaceDescriptionList
+            raise ValueError(
+                u"Cannot handle device type {0:s} for device {1:s}.".format(
+                    routertype, device))
 
-    def interfaceAddressList(self, device, with_subnetsize=None):
-        devinfo = self.getRouter(device)
-        if len(devinfo) == 0:
-            raise LookupError("Could not find device %s" % device)
+    def get_interface_addresses(self, device, with_subnetsize=None):
+        devinfo = self.get_device(device)
+        if not devinfo:
+            raise LookupError(u"Could not find device {0:s}".format(device))
 
-        devconfig = self.getConfig(devinfo[0])
-        routertype = devinfo[1].lower()
-        if routertype == "cisco" or routertype == "force10":
-            return cisco.addresses(devconfig, with_subnetsize)
-        elif routertype == "juniper":
-            return juniper.addresses(devconfig, with_subnetsize)
+        devconfig = self.get_config(devinfo[0])
+        routertype = devinfo.ConfigType.lower()
+        if routertype == 'cisco' or routertype == 'force10':
+            return cisco.get_addresses(devconfig, with_subnetsize)
+        elif routertype == 'juniper':
+            return juniper.get_addresses(devconfig, with_subnetsize)
         else:
-            raise ValueError("Cannot handle device type %s for device %s." % (routertype, device))
-        # if routertype
-    # interfaceAddressList
+            raise ValueError(
+                u"Cannot handle device type {0:s} for device {1:s}.".format(
+                    routertype, device))
 
-    def interfaceVrfList(self, device):
-        devinfo = self.getRouter(device)
-        if len(devinfo) == 0:
-            raise LookupError("Could not find device %s" % device)
+    def get_interface_vrfs(self, device):
+        devinfo = self.get_device(device)
+        if not devinfo:
+            raise LookupError(u"Could not find device {0:s}".format(device))
 
-        devconfig = self.getConfig(devinfo[0])
-        routertype = devinfo[1].lower()
-        if routertype == "cisco" or routertype == "force10":
-            return cisco.vrf(devconfig, with_subnetsize)
+        devconfig = self.get_config(devinfo.Hostname)
+        routertype = devinfo.ConfigType.lower()
+        if routertype == 'cisco' or routertype == 'force10':
+            return cisco.get_vrfs(devconfig)  # with_subnetsize
         else:
-            raise ValueError("Cannot handle device type %s for device %s." % (routertype, device))
-        # if routertype
-    # interfaceVrfList
+            raise ValueError(
+                u"Cannot handle device type {0:s} for device {1:s}.".format(
+                    routertype, device))
 
-    def printFilterSection(self, device, filterstr):
-        devinfo = self.getRouter(device)
-        if len(devinfo) == 0:
-            raise LookupError("Could not find device %s" % device)
+    def print_filter_section(self, device, pattern):
+        devinfo = self.get_device(device)
+        if not devinfo:
+            raise LookupError(u"Could not find device {0:s}".format(device))
 
-        devconfig = self.getConfig(devinfo[0])
-        routertype = devinfo[1].lower()
-        if routertype == "cisco" or routertype == "force10":
-            sections = cisco.section(devconfig, ".* ".join(filterstr))
-            cisco.printSection(sections)
-        elif routertype == "juniper":
-            sections = juniper.section(devconfig, filterstr)
-            juniper.printSection(sections)
+        devconfig = self.get_config(devinfo.Hostname)
+        routertype = devinfo.ConfigType.lower()
+        if routertype == 'cisco' or routertype == 'force10':
+            sections = cisco.get_section(devconfig, ".* ".join(pattern))
+            cisco.print_section(sections)
+        elif routertype == 'juniper':
+            sections = juniper.get_section(devconfig, pattern)
+            juniper.print_section(sections)
         else:
-            raise ValueError("Cannot handle device type %s for device %s." % (routertype, device))
-        # if routertype
+            raise ValueError(
+                u"Cannot handle device type {0:s} for device {1:s}.".format(
+                    routertype, device))
 
-    # printFilterSection
-
-    def printSection(self, vendor, sectionconfig):
-        if vendor == "cisco" or vendor == "force10":
-            cisco.printSection(sectionconfig)
-        elif vendor == "juniper":
-            juniper.printSection(sectionconfig)
+    def print_section(self, vendor, sectionconfig):
+        if vendor in ('cisco', 'force10'):
+            cisco.print_section(sectionconfig)
+        elif vendor == 'juniper':
+            juniper.print_section(sectionconfig)
         else:
-            raise ValueError("Cannot handle device type %s for device %s." % (routertype, device))
-        # if vendor
-    # printSection
-# rtconfig
+            raise ValueError(
+                u"Cannot handle device type {0:s}".format(vendor))

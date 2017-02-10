@@ -4,260 +4,260 @@
 Juniper specific parsing of configuration files
 """
 
-import sys
 import re
 
 
-def parseFile(config):
+def config_from_list(config_list):
     """ reads config file """
     flatconfig = ""
-    for line in config:
-        if re.match("^#", line):
+    for line in config_list:
+        if line.startswith('#'):
+            # skip comments
             continue
         flatconfig += line.replace("## SECRET-DATA", "")
-    # for line
-    flatconfig = re.sub("\/\*.*?\*\/", " ", flatconfig)
-    flatconfig = re.sub("\s+", " ", flatconfig)
-    return parseString(flatconfig + "}")[0]
-# def parseFile
 
-def parseString(flatconfig):
+    flatconfig = re.sub(r'/\*.*?\*/', " ", flatconfig)
+    flatconfig = re.sub(r'\s+', " ", flatconfig)
+    return parse_string(flatconfig + "}")[0]
+
+
+def parse_string(flatconfig):
     """ recursive parsing of config file """
     configtree = {}
     finished = False
-    paranthesis = ""
-    content = ""
-    elems = []
-    lastElem = ""
-    elem = ""
     while not finished:
-        reobj = re.search(r'^(.*?)([\{\}])(.*)$', flatconfig)
-        if reobj:
-            paranthesis = reobj.group(2)
-            content = reobj.group(1)
-            flatconfig = reobj.group(3)
+        match = re.search(r'^(.*?)([\{\}])(.*)$', flatconfig)
+        if match:
+            parenthesis = match.group(2)
+            content = match.group(1)
+            flatconfig = match.group(3)
         else:
-            print "Unmatched configuration string"
-            sys.exit(2)
-        # if match
+            raise ValueError('Unmatched configuration string')
+
         elems = content.split(";")
-        if content != "" and paranthesis == "{":
-            lastElem = elems.pop()
-            lastElem = re.sub(r'^\s*(.*?)\s*$', r'\1', lastElem)
-            (configtree[lastElem], flatconfig) = parseString(flatconfig)
+        if content != "" and parenthesis == "{":
+            last_elem = elems.pop()
+            last_elem = re.sub(r'^\s*(.*?)\s*$', r'\1', last_elem)
+            (configtree[last_elem], flatconfig) = parse_string(flatconfig)
         else:
             finished = True
-        # if content
 
         for elem in elems:
-            if re.match("^\s*$", elem):
+            if re.match(r'^\s*$', elem):
                 continue
             elem = re.sub(r'^\s*(.*?)\s*$', r'\1', elem)
             configtree[elem] = "filled"
-        # for elem
-    # while
-    return (configtree, flatconfig)
-# def parseString
 
-def section(config, section):
-    """ return config starting from dict section with the desired matches """
-    configtree = parseFile(config)
-    return sectionRecursive(configtree, section)
-# def section
+    return configtree, flatconfig
 
-def sectionRecursive(configtree, section):
-    """ parse configtree recursively and return config with the desired
-    matches in dict section """
-    ret = dict()
-    branchkeys = configtree.keys()
-    if len(section) == 0:
+
+def get_section(config, section):
+    """
+    return config starting from dict section with the desired matches
+    """
+    configtree = config_from_list(config)
+    return get_section_recursive(configtree, section)
+
+
+def get_section_recursive(configtree, sections):
+    """
+    parse configtree recursively and return config with the desired
+    matches in dict section
+    """
+    if not sections:
         # no more section matches available, return whole subtree
         return configtree
-    # if len(section)
-    cursection = section[0]
-    section = section[1:]
 
-    for key in branchkeys:
-        if re.match(cursection, key, flags=re.I):
-        # first section matches
-            if type(configtree[key]) != dict:
-                # remaining configtree is only a string, no more matches, just return
+    ret = {}
+    branch = configtree
+
+    current_section = sections[0]
+    remaining_sections = sections[1:]
+
+    for key in branch.keys():
+        if re.match(current_section, key, flags=re.I):
+            # first section matches
+            if not isinstance(configtree[key], dict):
+                # remaining configtree is only a string, no more matches,
+                # just return
                 return configtree[key]
             else:
                 # else go deeper into tree
-                ret.update(sectionRecursive(configtree[key], section))
-            # if not dict
-        # if match
+                ret.update(get_section_recursive(
+                    configtree[key], remaining_sections)
+                )
+                # if not dict
+                # if match
     # for key
     return ret
-# def sectionRecursive
 
-def removeEmptySections(configtree):
+
+def discard_empty_sections(configtree):
     """ remove empty sections from configtree """
     ret = dict()
     branchkeys = configtree.keys()
     for key in branchkeys:
-        if type(configtree[key]) == dict:
-            #print "+++ section[",key,"] is dict"
-            if len(configtree[key]) > 0:
-                #print "   +++ and > 0:",configtree[key]
-                temp = removeEmptySections(configtree[key])
-                if len(temp) > 0:
+        if isinstance(configtree[key], dict):
+            # print "+++ section[",key,"] is dict"
+            if configtree[key]:
+                # print "   +++ and > 0:",configtree[key]
+                temp = discard_empty_sections(configtree[key])
+                if temp:
                     ret.update({key: temp})
-                # if content in section
-            # if content in section with empty sections
+                    # if content in section
+                    # if content in section with empty sections
         else:
             ret.update({key: 'filled'})
-        # if configtree dict
+            # if configtree dict
     # for key
     return ret
-# def removeEmptySection
 
-def filterSection(configtree, filter):
+
+def filter_section(configtree, pattern):
     """ filters configtree according to regexp terms in filter and outputs
     only those parts of section that contain values """
-    return removeEmptySections(filterSectionRecursive(configtree, filter))
-# def filterSection
+    return discard_empty_sections(filter_section_recursive(configtree, pattern))
 
-def filterSectionRecursive(configtree, filter):
+
+def filter_section_recursive(configtree, pattern):
     """ filters configtree according to regexp terms in filter and outputs a
     dict of all matched entries """
     ret = dict()
     branchkeys = configtree.keys()
     for key in branchkeys:
-        if type(configtree[key]) == dict:
+        if isinstance(configtree[key], dict):
             # if remaining configtree is actually still a tree
-            if re.search(filter, key):
+            if re.search(pattern, key):
                 # if the current key matches the filter, append remaining
                 # configtree to return variable
                 ret.update({key: configtree[key]})
             else:
                 # else go deeper into tree and process
-                ret.update({key: filterSectionRecursive(configtree[key],filter)})
-            # if match
+                ret.update(
+                    {key: filter_section_recursive(configtree[key], pattern)})
+                # if match
         else:
-            if re.search(filter, key):
+            if re.search(pattern, key):
                 ret.update({key: 'filled'})
-        # if configtree match
+                # if configtree match
     # for key
     return ret
-# def filterSectionRecursive
 
-def filterConfig(config, secstring, filter):
+
+def filter_config(config, section, pattern):
     """ get section from config and filter for regexp """
-    return filterSection(section(config, secstring), filter)
-# def filterConfig
+    config_section = get_section(config, section)
+    return filter_section(config_section, pattern)
 
-def printSectionRecursive(configtree, spaces):
+
+def print_section_recursive(configtree, spaces):
     """prints section recursively"""
-    branchkeys = configtree.keys()
-    for key in branchkeys:
-        if type(configtree[key]) == dict:
-            print spaces, key, "{"
-            printSectionRecursive(configtree[key], spaces + "   ")
-            print spaces, "}"
+    for key in configtree:
+        if isinstance(configtree[key], dict):
+            print(spaces, key, "{")
+            print_section_recursive(configtree[key], spaces + "   ")
+            print(spaces, "}")
         else:
-            print spaces, key+";"
-        # if configtree dict
-    # for key
-# def printSectionRecursive
+            print(spaces, key + ";")
+            # if configtree dict
+            # for key
 
-def printSection(configtree):
+
+def print_section(configtree):
     """ prints configtree in a nice way """
-    printSectionRecursive(configtree, "")
-# def printSection
+    print_section_recursive(configtree, "")
 
-def findDescription(configtree):
+
+def find_description(configtree):
     """ find description in configtree and return it,
     otherwise return false """
-    for key in configtree.keys():
+    for key in configtree:
         result = re.match("description (.*)", key)
         if result:
             return result.group(1)
     # for key
     return ""
-# def findDescription
 
-def interfaces(config):
+
+def get_interfaces(config):
     """ find interfaces and matching descriptions from filename and
     returns a dict interface=>description
     """
-    inttree = filterSection(section(config, ["interfaces"]), "description .*")
+    inttree = filter_section(
+        get_section(config, ["interfaces"]),
+        "description .*"
+    )
     ret = dict()
-    for interface in inttree.keys():
-        intdescr = findDescription(inttree[interface])
+    for interface in inttree:
+        intdescr = find_description(inttree[interface])
         if intdescr:
             ret[interface] = re.sub('"', '', intdescr)
             inttree[interface].pop('description ' + intdescr)
         # if intdescr
-        for unit in inttree[interface].keys():
-            if not re.match("inactive: ", unit):
-                unitdescr = findDescription(inttree[interface][unit])
-                unitres = re.match("unit ([0-9]+)", unit)
+        for unit in inttree[interface]:
+            if not re.match(r'inactive: ', unit):
+                unitdescr = find_description(inttree[interface][unit])
+                unitres = re.match(r'unit ([0-9]+)', unit)
                 if unitres:
-                    ret[interface + "." + unitres.group(1)] = unitdescr
+                    ret["{}.{}".format(interface, unitres.group(1))] = unitdescr
                 else:
-                    ret[interface + "." + unitdescr] = unitdescr
-                # if unit
-            # if not inactive
-        # for unit
+                    ret["{}.{}".format(interface, unitdescr)] = unitdescr
+                    # if unit
+                    # if not inactive
+                    # for unit
     # for interface
     return ret
-# def interfaces
 
-def findAddress(configtree):
+
+def find_address(configtree):
     """find description in configtree and return it, otherwise return false"""
     for key in configtree.keys():
         result = re.match("address (.*)", key)
         if result:
             return result.group(1)
-    # for key
     return ""
-# def findAddress
 
-def addresses(config, with_subnetsize=None):
+
+def get_addresses(config, with_subnetsize=None):
     """ find interfaces and matching ip addresses from filename and returns a
      dict interface=>(ip=>address, ipv6=>address)
     """
-    inttree = filterSection(section(config, ["interfaces"]), "address .*")
+    inttree = filter_section(get_section(config, ["interfaces"]), "address .*")
     ret = dict()
-    for interface in inttree.keys():
+    for interface in inttree:
         for unit in inttree[interface].keys():
             if not re.match("inactive: ", unit):
                 unittree = inttree[interface][unit]
                 unitres = re.match("unit ([0-9]+)", unit)
-                intret = ""
                 if unitres:
                     intret = interface + "." + unitres.group(1)
                 else:
                     intret = interface + ".unknownunit"
 
                 if "family inet" in unittree:
-                    addr = findAddress(unittree['family inet'])
+                    addr = find_address(unittree['family inet'])
                     if addr:
-                        if not intret in ret:
+                        if intret not in ret:
                             ret[intret] = dict()
                         if with_subnetsize:
                             ret[intret].update({'ip': addr.split(" ")[0]})
                         else:
                             ret[intret].update({'ip': addr.split("/")[0]})
-                        # if intret
-                    # if addr
+                            # if intret
+                            # if addr
                 # if family inet
                 if "family inet6" in unittree:
-                    addr = findAddress(unittree['family inet6'])
+                    addr = find_address(unittree['family inet6'])
                     if addr:
-                        if not intret in ret:
+                        if intret not in ret:
                             ret[intret] = dict()
                         if with_subnetsize:
                             ret[intret].update({'ipv6': addr.split(" ")[0]})
                         else:
                             ret[intret].update({'ipv6': addr.split("/")[0]})
-                        # if intret
-                    # if addr
-                # if family inet6
-            # if not inactive
-        # for unit
-    # for interface
+                            # if intret
+                            # if addr
+                            # if family inet6
+                            # if not inactive
+                            # for unit
     return ret
-# def addresses

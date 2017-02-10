@@ -3,3 +3,4 @@ dist/
 rancidtoolkit2.egg-info/
 *.pyc
 test.py*
+.idea

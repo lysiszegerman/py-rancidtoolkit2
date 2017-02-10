@@ -1,3 +1,7 @@
 # Written by Marcus Stoegbauer <ms@man-da.de>
 
-__all__ = [ "rtconfig", "rancid" , "oxidized" ]
+"""
+Configuration parsing library for networking devices
+"""
+
+__all__ = ["rtconfig", "rancid", "oxidized"]

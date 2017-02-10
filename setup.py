@@ -4,10 +4,10 @@ from setuptools import setup, find_packages
 import os
 import sys
 
-version = "0.1"
+version = "0.2"
 
 if sys.argv[-1] == 'publish':
-    os.system('python2.7 setup.py sdist upload')
+    os.system('python3 setup.py sdist upload')
     print("You probably want to also tag the version now:")
     print("  git tag -a %s -m 'version %s'" % (version, version))
     print("  git push --tags")
@@ -26,4 +26,5 @@ specific data',
                    "License :: OSI Approved :: MIT License",
                    "Programming Language :: Python"
                    ],
+      requires=['requests'],
       zip_safe=False)

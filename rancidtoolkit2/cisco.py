@@ -1,166 +1,160 @@
 #!/usr/bin/env python
-#
-# Written by Marcus Stoegbauer <ms@man-da.de>
-
 """
+rancidtoolkit2
+by Marcus Stoegbauer <ms@man-da.de>
+
 Cisco specific parsing of configuration files
 """
 
-import ipaddr
 import re
+from collections import defaultdict
+from ipaddress import ip_address, ip_network
 
-def section(config, section):
+
+def get_section(config, _section):
     """returns a list with all configuration within section from filename"""
-    ret = []
-    insec = False
+    result = []
+    insecure = False
     spaces = ""
     secret = []
 
     for line in config:
-        if re.match("^!", line):
+        if line.startswith('!'):
             continue
-        reobj = re.match("^(\s*)" + section, line, flags=re.I)
-        if reobj:                       # match on section
-            if insec:                     # already in section
-                ret = ret + [secret]        # save the old section
-            spaces = reobj.group(1)       # start a new section
-            insec = True
-            secret = []
-        # if match
-        if insec:  # already in section
-            secreobj = re.match("^" + spaces + "[^\s]", line)
-            # not first line of section (which always matches the pattern) and
-            if len(secret) > 0 and secreobj:
-                # match old section is over, save section
-                ret = ret + [secret]
-                insec = False
-            secret = secret + [line]      # save to current section
-        # if insec
-    # for line
-    return ret
-# section
 
-def filterSection(section, filter):
+        match = re.match(r'^(\s*)' + _section, line, flags=re.I)
+        if match:                           # match on section
+            if insecure:                    # already in section
+                result.append(secret)       # save the old section
+            spaces = match.group(1)         # start a new section
+            insecure = True
+            secret = []
+
+        if insecure:  # already in section
+            match = re.match(r"^{}[^\s]".format(spaces), line)
+            # not first line of section (which always matches the pattern) and
+            if secret and match:
+                # match old section is over, save section
+                result.append(secret)
+                insecure = False
+            secret.append(line)  # save to current section
+
+    return result
+
+
+def filter_section(section, pattern):
     """filters section according to regexp terms in filter and outputs a list
     of all matched entries """
-    ret = []
-    for sec in section:
+    result = []
+    for entry in section:
         secret = []
-        for line in sec:
+        for line in entry:
             line = line.lstrip()
-            if re.match(filter, line, re.I):
-                secret = secret + [line]
-        ret = ret + [secret]
-    # for sec
-    return ret
-# filterSection
+            if re.match(pattern, line, re.I):
+                secret.append(line)
+        result.append(secret)
+    return result
 
-def filterConfig(config, secstring, filter):
+
+def filter_config(config, secstring, pattern):
     """extracts sections secstring from the entire configuration in filename
     and filters against regexp filter returns a list of all matches
     """
-    return filterSection(section(config, secstring), filter)
+    return filter_section(get_section(config, secstring), pattern)
 
 
-def interfaces(config):
+def get_interfaces(config):
     """find interfaces and matching descriptions from filename and return dict
     with interface=>descr """
-    parseresult = filterConfig(config, "interface","^interface|^description")
-    ret = dict()
-    skipdescr = False
-    for sec in parseresult:
-        intret = ""
-        for line in sec:
-            reobj = re.match("interface (.*)", line)
-            if reobj:
-                skipdescr = False
-                if re.match("Vlan", reobj.group(1)):
-                    skipdescr = True
+    interface_config = filter_config(config, 'interface',
+                                     '^interface|^description')
+    result = dict()
+    skip_description = False
+    for section in interface_config:
+        ifname = ""
+        for line in section:
+            match = re.match(r"interface (.*)", line)
+            if match:
+                skip_description = False
+                if re.match(r"Vlan", match.group(1)):
+                    skip_description = True
                 else:
-                    intret = reobj.group(1)
-            # if interface
-            if not skipdescr:
-                reobj = re.match("description (.*)", line)
-                if reobj:
-                    ret[intret] = reobj.group(1)
-                else:
-                    ret[intret] = ""
-            # if not skipdescr
-        # for line
-    # for sec
-    return ret
-# def interfaces
+                    ifname = match.group(1)
 
-def vrfs(config):
+            if not skip_description:
+                match = re.match(r"description (.*)", line)
+                if match:
+                    result[ifname] = match.group(1)
+                else:
+                    result[ifname] = ""
+    return result
+
+
+def get_vrfs(config):
     """find interfaces and matching vrfs from filename and return dict
     with interface=>vrf """
-    parseresult = filterConfig(config, "interface","^interface|^(ip )?vrf forwarding")
-    ret = dict()
+    interface_config = filter_config(config, "interface",
+                                     "^interface|^(ip )?vrf forwarding")
+    result = dict()
     skipvrf = False
-    for sec in parseresult:
-        intret = ""
-        for line in sec:
-            reobj = re.match("interface (.*)", line)
-            if reobj:
+    for section in interface_config:
+        ifname = ""
+        for line in section:
+            match = re.match(r"interface (.*)", line)
+            if match:
                 skipvrf = False
-                if re.match("Vlan", reobj.group(1)):
+                if 'vlan' in match.group(1).lower():
                     skipvrf = True
                 else:
-                    intret = reobj.group(1)
-            # if interface
-            if not skipvrf:
-                reobj = re.match("(ip )?vrf forwarding (.*)", line)
-                if reobj:
-                    ret[intret] = reobj.group(2)
-                else:
-                    ret[intret] = ""
-            # if not skipvrf
-        # for line
-    # for sec
-    return ret
- # def vrfs
+                    ifname = match.group(1)
 
-def addresses(config, with_subnetsize=None):
+            if not skipvrf:
+                match = re.match(r"(ip )?vrf forwarding (.*)", line)
+                if match:
+                    result[ifname] = match.group(2)
+                else:
+                    result[ifname] = ""
+
+    return result
+
+
+def get_addresses(config, with_subnetsize=None):
     """find ip addresses configured on all interfaces from filename and return
     dict with interface=>(ip=>address, ipv6=>address)"""
-    parseresult = filterConfig(config, "interface","^interface|^ip address|^ipv6 address")
-    ret = dict()
-    for sec in parseresult:
-        intret = ""
-        for line in sec:
-            reobj = re.match("interface (.*)", line)
-            if reobj:
-                intret = reobj.group(1)
-            if intret:
-                # FIXME: exclude interfaces with shutdown configured
-                reobj = re.match("(ip|ipv6) address (.*)", line)
-                if reobj:
-                    afi = reobj.group(1)
-                    if afi == "ip" and with_subnetsize:
-                        ip = reobj.group(2).split(" ")[0]
-                        if ipaddr.IPAddress(ip).version is not 4:
-                            continue
-                        hostmask = reobj.group(2).split(" ")[1]
-                        address = str(ipaddr.IPv4Network(ip + "/" + hostmask))
-                    elif afi == "ipv6" and with_subnetsize:
-                        address = re.split('[ ]', reobj.group(2))[0]
-                    else:
-                        address = re.split('[\/ ]', reobj.group(2))[0]
-                    if not intret in ret:
-                        ret[intret] = dict()
-                    ret[intret].update({afi: address})
-                # if match
-            # if interface
-        # for line
-    # for sec
-    return ret
-# def addresses
-
-def printSection(section):
-    """prints section in a nice way"""
-    if type(section) == list:
+    interface_config = filter_config(config, "interface",
+                                     "^interface|^ip address|^ipv6 address")
+    result = defaultdict(dict)
+    for section in interface_config:
+        ifname = ""
         for line in section:
-            printSection(line)
+            match = re.match(r"interface (.*)", line)
+            if match:
+                ifname = match.group(1)
+            if ifname:
+                # FIXME: exclude interfaces with shutdown configured
+                match = re.match(r"(ip|ipv6) address (.*)", line)
+                if match:
+                    af = match.group(1)
+                    if af == 'ip' and with_subnetsize:
+                        ipaddr = match.group(2).split(" ")[0]
+                        if ip_address(ipaddr).version is not 4:
+                            continue
+                        hostmask = match.group(2).split()[1]
+                        address = str(ip_network("{0}/{1}".format(ipaddr,
+                                                                  hostmask)))
+                    elif af == 'ipv6' and with_subnetsize:
+                        address = re.split(r'[ ]', match.group(2))[0]
+                    else:
+                        address = re.split(r'[/ ]', match.group(2))[0]
+
+                    result[ifname].update({af: address})
+    return result
+
+
+def print_section(section):
+    """prints section in a nice way"""
+    if isinstance(section, list):
+        for line in section:
+            print_section(line)
     else:
-        print section
-# def printSection
+        print(section)
