@@ -171,12 +171,19 @@ def print_section(configtree):
 def find_description(configtree):
     """ find description in configtree and return it,
     otherwise return false """
-    for key in configtree:
-        result = re.match("description (.*)", key)
-        if result:
-            return result.group(1)
-    # for key
-    return ""
+    try:
+        for key in configtree.keys():
+            # try with quotes first
+            result = re.match(r"description \"(.*)\"", key)
+            if not result:
+                # if that doesn't match, try without
+                result = re.match(r"description (.*)", key)
+            if result:
+                return result.group(1), key
+    except AttributeError:
+        pass
+
+    return "", None
 
 
 def get_interfaces(config):
@@ -189,19 +196,19 @@ def get_interfaces(config):
     )
     ret = dict()
     for interface in inttree:
-        intdescr = find_description(inttree[interface])
+        intdescr, intdesckey = find_description(inttree[interface])
         if intdescr:
-            ret[interface] = re.sub('"', '', intdescr)
-            inttree[interface].pop('description ' + intdescr)
+            ret[interface] = intdescr
+            inttree[interface].pop(intdesckey)
         # if intdescr
         for unit in inttree[interface]:
             if not re.match(r'inactive: ', unit):
                 unitdescr = find_description(inttree[interface][unit])
-                unitres = re.match(r'unit ([0-9]+)', unit)
+                unitres = re.match(r'unit ([\d]+)', unit)
                 if unitres:
                     ret["{}.{}".format(interface, unitres.group(1))] = unitdescr
                 else:
-                    ret["{}.{}".format(interface, unitdescr)] = unitdescr
+                    ret[interface] = unitdescr
                     # if unit
                     # if not inactive
                     # for unit
