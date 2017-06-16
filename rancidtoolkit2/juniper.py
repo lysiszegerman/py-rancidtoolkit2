@@ -154,11 +154,11 @@ def print_section_recursive(configtree, spaces):
     """prints section recursively"""
     for key in configtree:
         if isinstance(configtree[key], dict):
-            print(spaces, key, "{")
+            print("%s%s%s" % (spaces, key, "{"))
             print_section_recursive(configtree[key], spaces + "   ")
-            print(spaces, "}")
+            print("%s%s" % (spaces, "}"))
         else:
-            print(spaces, key + ";")
+            print("%s%s" % (spaces, key + ";"))
             # if configtree dict
             # for key
 
