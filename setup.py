@@ -18,7 +18,7 @@ setup(name='rancidtoolkit2',
       description='Functions to parse network devices config files and output \
 specific data',
       author='Marcus Stoegbauer',
-      author_email='ms@man-da.de',
+      author_email='lysis@lys.is',
       license='MIT',
       packages=find_packages(),
       classifiers=["Development Status :: 4 - Beta",
@@ -26,5 +26,5 @@ specific data',
                    "License :: OSI Approved :: MIT License",
                    "Programming Language :: Python"
                    ],
-      requires=['requests'],
+      install_requires=['requests', 'ipaddress'],
       zip_safe=False)
