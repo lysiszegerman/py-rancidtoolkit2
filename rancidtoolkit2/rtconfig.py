@@ -59,7 +59,7 @@ class RtConfig(object):
         else:
             raise TypeError("filter is not a dict")
 
-        return devices.keys()
+        return list(devices.keys())
 
     def printable_interfaces(self, device):
         intlist = self.get_interface_descriptions(device)
