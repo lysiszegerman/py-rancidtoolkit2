@@ -15,7 +15,8 @@ class Oxidized(RtConfig):
     os_to_configtype = {'ios': 'cisco',
                         'junos': 'juniper',
                         'screenos': 'netscreen',
-                        'ftos': 'force10'}
+                        'ftos': 'force10',
+                        'xos': 'extreme'}
 
     # pylint: disable=super-init-not-called
     def __init__(self, oxidized_url=None, oxidized_user=None, oxidized_password=None):
