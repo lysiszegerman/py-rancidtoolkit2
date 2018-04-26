@@ -18,12 +18,21 @@ class Oxidized(RtConfig):
                         'ftos': 'force10'}
 
     # pylint: disable=super-init-not-called
-    def __init__(self, oxidized_url=None):
+    def __init__(self, oxidized_url=None, oxidized_user=None, oxidized_password=None):
         if not oxidized_url:
             if sys.platform == "darwin":
                 oxidized_url = "http://dazzle.office.man-da.de:8888"
         self.__method = "oxidized"
         self.__base_url = oxidized_url
+        self.__username = oxidized_user
+        self.__password = oxidized_password
+
+
+    def __oxidized_request(self, url):
+        if self.__username and self.__password:
+            return requests.get(url, auth=(self.__username, self.__password))
+        else:
+            return requests.get(url)
 
     def configtype_from_os(self, operating_system):
         """
@@ -42,7 +51,7 @@ class Oxidized(RtConfig):
         Lookup all devices in the Oxidized instance
         :return: dict with fqdn to configtype mapping
         """
-        response = requests.get(urljoin(self.__base_url, 'nodes.json'))
+        response = self.__oxidized_request(urljoin(self.__base_url, 'nodes.json'))
 
         if not response.ok:
             raise LookupError(
@@ -67,7 +76,7 @@ class Oxidized(RtConfig):
             if not fqdn.startswith(device_fqdn):
                 continue
 
-            response = requests.get(
+            response = self.__oxidized_request(
                 urljoin(self.__base_url,
                         "/node/show/{}.json".format(fqdn))
             )
@@ -89,7 +98,7 @@ class Oxidized(RtConfig):
             raise ValueError("Device {} not in Oxidized config".format(
                 device_fqdn))
 
-        response = requests.get(urljoin(
+        response = self.__oxidized_request(urljoin(
             self.__base_url, "/node/fetch/{group}/{host}".format(
                 group=device.Group, host=device.Hostname)))
         return [line.rstrip('\n') for line in response.iter_lines(decode_unicode=True)]
